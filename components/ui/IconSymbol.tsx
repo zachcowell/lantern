@@ -23,6 +23,7 @@ const MAPPING = {
   'camera.fill': 'camera-alt',
   'book.fill': 'menu-book',
   'chart.bar.fill': 'bar-chart',
+  'location.fill': 'my-location',
 } as IconMapping;
 
 /**

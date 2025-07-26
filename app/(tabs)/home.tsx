@@ -2,10 +2,10 @@ import { StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 
-export default function MetricsScreen() {
+export default function HomeScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Metrics</ThemedText>
+      <ThemedText type="title">Home</ThemedText>
       <ThemedText style={styles.placeholder}>
         User metrics will be displayed here:
       </ThemedText>
