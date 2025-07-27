@@ -1,128 +1,171 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, TouchableOpacity, Platform } from 'react-native';
-import MapView, { Region } from 'react-native-maps';
-import * as Location from 'expo-location';
-import { IconSymbol } from '@/components/ui/IconSymbol';
+import React, { useRef, useEffect } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { WebView } from 'react-native-webview';
+import geojsonData from '@/assets/lanternfly-sightings.geojson';
 
 export default function MapScreen() {
-  const mapRef = useRef<MapView>(null);
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [region, setRegion] = useState<Region>({
-    latitude: 40.7128,
-    longitude: -74.0060,
-    latitudeDelta: 0.0922,
-    longitudeDelta: 0.0421,
-  });
+  const webViewRef = useRef<WebView>(null);
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+      <style>
+        body { margin: 0; padding: 0; }
+        #map { width: 100vw; height: 100vh; }
+        .cluster-icon {
+          background-color: #0a7ea4;
+          color: white;
+          border-radius: 50%;
+          font-weight: bold;
+          font-size: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 3px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+      </style>
+    </head>
+    <body>
+      <div id="map"></div>
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+      <script>
+        // Initialize map
+        const map = L.map('map').setView([40.7128, -74.0060], 8);
+        
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19
+        }).addTo(map);
+        
+        // Create marker cluster group
+        const markers = L.markerClusterGroup({
+          maxClusterRadius: 60,
+          iconCreateFunction: function(cluster) {
+            const count = cluster.getChildCount();
+            let size = 'small';
+            let sizeClass = 40;
+            
+            if (count > 100) {
+              size = 'large';
+              sizeClass = 50;
+            } else if (count > 50) {
+              size = 'medium';
+              sizeClass = 45;
+            }
+            
+            return L.divIcon({
+              html: '<div class="cluster-icon" style="width: ' + sizeClass + 'px; height: ' + sizeClass + 'px;">' + count + '</div>',
+              className: 'cluster-' + size,
+              iconSize: [sizeClass, sizeClass]
+            });
+          }
+        });
+        
+        // Function to load markers
+        window.loadMarkers = function(data) {
+          try {
+            const geojsonData = JSON.parse(data);
+            let count = 0;
+            
+            if (geojsonData && geojsonData.features) {
+              geojsonData.features.forEach(feature => {
+                const [lng, lat] = feature.geometry.coordinates;
+                const marker = L.marker([lat, lng], {
+                  icon: L.divIcon({
+                    html: '<div style="background-color: #ff4444; width: 8px; height: 8px; border-radius: 50%; border: 1px solid white;"></div>',
+                    className: 'custom-marker',
+                    iconSize: [8, 8]
+                  })
+                });
+                
+                // Add popup with info
+                const date = new Date(feature.properties.date).toLocaleDateString();
+                marker.bindPopup(
+                  '<strong>Sighting #' + feature.properties.id + '</strong><br>' +
+                  'Date: ' + date
+                );
+                
+                markers.addLayer(marker);
+                count++;
+              });
+            }
+            
+            map.addLayer(markers);
+            console.log('Loaded ' + count + ' markers');
+          } catch (error) {
+            console.error('Error loading markers:', error);
+          }
+        };
+        
+        // Try to get user location
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            position => {
+              map.setView([position.coords.latitude, position.coords.longitude], 10);
+            },
+            error => {
+              console.log('Location error:', error);
+            }
+          );
+        }
+        
+        // Signal that map is ready
+        window.ReactNativeWebView.postMessage('mapReady');
+      </script>
+    </body>
+    </html>
+  `;
 
   useEffect(() => {
-    (async () => {
-      try {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setErrorMsg('Permission to access location was denied');
-          setLoading(false);
-          return;
-        }
-
-        // For simulator, you can set a custom location
-        let currentLocation = await Location.getCurrentPositionAsync({});
-        setLocation(currentLocation);
-        setRegion({
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        });
-        setLoading(false);
-      } catch (error) {
-        // Fallback to default location if location services fail
-        setLoading(false);
+    // Wait a bit for the WebView to load, then send the data
+    const timer = setTimeout(() => {
+      if (webViewRef.current && geojsonData) {
+        // Sample the data to reduce size - take every 10th point for now
+        const sampledData = {
+          type: 'FeatureCollection',
+          features: geojsonData.features.filter((_: any, index: number) => index % 10 === 0)
+        };
+        
+        console.log(`Sending ${sampledData.features.length} of ${geojsonData.features.length} markers`);
+        
+        // Send data in chunks
+        const dataString = JSON.stringify(sampledData);
+        webViewRef.current.injectJavaScript(`
+          try {
+            window.loadMarkers(${JSON.stringify(dataString)});
+          } catch (e) {
+            console.error('Error in WebView:', e);
+          }
+          true;
+        `);
       }
-    })();
+    }, 2000);
+
+    return () => clearTimeout(timer);
   }, []);
-
-  const centerOnUserLocation = () => {
-    if (location && mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      }, 1000);
-    }
-  };
-
-  const zoomIn = () => {
-    if (mapRef.current) {
-      const newRegion = {
-        ...region,
-        latitudeDelta: region.latitudeDelta / 2,
-        longitudeDelta: region.longitudeDelta / 2,
-      };
-      mapRef.current.animateToRegion(newRegion, 300);
-    }
-  };
-
-  const zoomOut = () => {
-    if (mapRef.current) {
-      const newRegion = {
-        ...region,
-        latitudeDelta: region.latitudeDelta * 2,
-        longitudeDelta: region.longitudeDelta * 2,
-      };
-      mapRef.current.animateToRegion(newRegion, 300);
-    }
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.loadingText}>Loading map...</Text>
-      </View>
-    );
-  }
-
-  if (errorMsg) {
-    return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>{errorMsg}</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={region}
-        onRegionChangeComplete={setRegion}
-        showsUserLocation={true}
-        showsMyLocationButton={Platform.OS === 'android'}
-        showsCompass={true}
+      <WebView
+        ref={webViewRef}
+        style={styles.webview}
+        source={{ html: htmlContent }}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        startInLoadingState={true}
+        scalesPageToFit={true}
+        onMessage={(event) => {
+          console.log('WebView message:', event.nativeEvent.data);
+        }}
       />
-      
-      {/* Custom Controls */}
-      <View style={styles.controlsContainer}>
-        {/* Center on Location Button */}
-        <TouchableOpacity style={styles.controlButton} onPress={centerOnUserLocation}>
-          <IconSymbol name="location.fill" size={24} color="#007AFF" />
-        </TouchableOpacity>
-        
-        {/* Zoom Controls */}
-        <View style={styles.zoomControls}>
-          <TouchableOpacity style={[styles.controlButton, styles.zoomButton]} onPress={zoomIn}>
-            <Text style={styles.zoomText}>+</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.controlButton, styles.zoomButton]} onPress={zoomOut}>
-            <Text style={styles.zoomText}>−</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
     </View>
   );
 }
@@ -131,55 +174,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  centerContainer: {
+  webview: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  map: {
-    width: '100%',
-    height: '100%',
-  },
-  errorText: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: 'red',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-  },
-  controlsContainer: {
-    position: 'absolute',
-    right: 16,
-    bottom: 100,
-  },
-  controlButton: {
-    backgroundColor: 'white',
-    borderRadius: 30,
-    width: 56,
-    height: 56,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  zoomControls: {
-    marginTop: 8,
-  },
-  zoomButton: {
-    marginBottom: 8,
-  },
-  zoomText: {
-    fontSize: 28,
-    fontWeight: '300',
-    color: '#007AFF',
   },
 });
