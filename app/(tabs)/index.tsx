@@ -1,162 +1,156 @@
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, ScrollView, View, Switch, Text } from 'react-native';
+import { useState, useEffect } from 'react';
+import { ThemedText } from '@/components/ThemedText';
+import { ThemedView } from '@/components/ThemedView';
+import { MetricCard } from '@/components/MetricCard';
+import { useThemeColor } from '@/hooks/useThemeColor';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+import * as Location from 'expo-location';
 
-export default function MapScreen() {
-  const htmlContent = `
+
+export default function HomeScreen() {
+  const [showUserDataOnly, setShowUserDataOnly] = useState(false);
+  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const switchTrackColor = useThemeColor({}, 'tabIconDefault');
+  const switchThumbColor = useThemeColor({}, 'tint');
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        return;
+      }
+      let currentLocation = await Location.getCurrentPositionAsync({});
+      setLocation(currentLocation);
+    })();
+  }, []);
+
+  const placeholderData = {
+    sightings: showUserDataOnly ? 12 : 347,
+    killed: showUserDataOnly ? 8 : 213,
+    nests: showUserDataOnly ? 3 : 45,
+    patrols: showUserDataOnly ? 5 : 89,
+  };
+
+  const userLat = location?.coords.latitude || 40.7128;
+  const userLng = location?.coords.longitude || -74.0060;
+  const hasLocation = !!location;
+
+  const mapHtml = `
     <!DOCTYPE html>
     <html>
     <head>
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-      <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
       <style>
         body { margin: 0; padding: 0; }
         #map { width: 100vw; height: 100vh; }
-        #loading {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          background: white;
-          padding: 20px;
-          border-radius: 8px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-          z-index: 1000;
-        }
-        .cluster-icon {
-          background-color: #0a7ea4;
-          color: white;
-          border-radius: 50%;
-          font-weight: bold;
-          font-size: 14px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 3px solid white;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
       </style>
     </head>
     <body>
       <div id="map"></div>
-      <div id="loading">Loading lanternfly data...</div>
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
       <script>
-        // Initialize map
-        const map = L.map('map').setView([40.7128, -74.0060], 8);
+        // Initialize map with user location from React Native
+        const userLat = ${userLat};
+        const userLng = ${userLng};
+        const hasLocation = ${hasLocation};
+        
+        const map = L.map('map', { zoomControl: false }).setView([userLat, userLng], hasLocation ? 13 : 10);
         
         // Add tile layer
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap contributors',
+          attribution: '© OpenStreetMap',
           maxZoom: 19
         }).addTo(map);
         
-        // Create marker cluster group with optimized settings
-        const markers = L.markerClusterGroup({
-          maxClusterRadius: 60,
-          chunkedLoading: true,
-          chunkInterval: 200,
-          chunkDelay: 50,
-          iconCreateFunction: function(cluster) {
-            const count = cluster.getChildCount();
-            let size = 'small';
-            let sizeClass = 40;
-            
-            if (count > 100) {
-              size = 'large';
-              sizeClass = 50;
-            } else if (count > 50) {
-              size = 'medium';
-              sizeClass = 45;
-            }
-            
-            return L.divIcon({
-              html: '<div class="cluster-icon" style="width: ' + sizeClass + 'px; height: ' + sizeClass + 'px;">' + count + '</div>',
-              className: 'cluster-' + size,
-              iconSize: [sizeClass, sizeClass]
-            });
-          }
-        });
-        
-        // Fetch GeoJSON data from GitHub
-        fetch('https://raw.githubusercontent.com/zachcowell/lantern/main/assets/lanternfly-sightings.geojson')
-          .then(response => response.json())
-          .then(data => {
-            console.log('Loaded ' + data.features.length + ' sightings');
-            
-            // Hide loading indicator
-            document.getElementById('loading').style.display = 'none';
-            
-            // Add markers
-            const markerList = [];
-            data.features.forEach(feature => {
-              const [lng, lat] = feature.geometry.coordinates;
-              const marker = L.marker([lat, lng], {
-                icon: L.divIcon({
-                  html: '<div style="background-color: #ff4444; width: 8px; height: 8px; border-radius: 50%; border: 1px solid white;"></div>',
-                  className: 'custom-marker',
-                  iconSize: [8, 8]
-                })
-              });
-              
-              // Add popup with info
-              const date = new Date(feature.properties.date).toLocaleDateString();
-              marker.bindPopup(
-                '<strong>Sighting #' + feature.properties.id + '</strong><br>' +
-                'Date: ' + date
-              );
-              
-              markerList.push(marker);
-            });
-            
-            // Add all markers to cluster group
-            markers.addLayers(markerList);
-            map.addLayer(markers);
-            
-            // Try to get user location
-            if (navigator.geolocation) {
-              navigator.geolocation.getCurrentPosition(
-                position => {
-                  map.setView([position.coords.latitude, position.coords.longitude], 10);
-                  
-                  // Add user location marker
-                  L.marker([position.coords.latitude, position.coords.longitude], {
-                    icon: L.divIcon({
-                      html: '<div style="background-color: #007AFF; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
-                      className: 'user-location',
-                      iconSize: [16, 16]
-                    })
-                  }).addTo(map).bindPopup('Your location');
-                },
-                error => {
-                  console.log('Location error:', error);
-                }
-              );
-            }
-          })
-          .catch(error => {
-            console.error('Error loading data:', error);
-            document.getElementById('loading').innerHTML = 'Error loading data: ' + error.message;
-          });
+        // Add user location marker if available
+        if (hasLocation) {
+          L.circleMarker([userLat, userLng], {
+            radius: 8,
+            fillColor: '#007AFF',
+            color: 'white',
+            weight: 3,
+            opacity: 1,
+            fillOpacity: 1
+          }).addTo(map);
+          
+          // Add pulsing effect
+          L.circle([userLat, userLng], {
+            radius: 20,
+            fillColor: '#007AFF',
+            color: '#007AFF',
+            weight: 1,
+            opacity: 0.3,
+            fillOpacity: 0.15,
+            className: 'pulse-circle'
+          }).addTo(map);
+        }
       </script>
     </body>
     </html>
   `;
 
+
   return (
-    <View style={styles.container}>
-      <WebView
-        style={styles.webview}
-        source={{ html: htmlContent }}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        startInLoadingState={true}
-        scalesPageToFit={true}
-      />
-    </View>
+    <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <ThemedText type="title" style={styles.title}>
+          Lanternfly Impact Metrics
+        </ThemedText>
+        
+        <View style={styles.toggleContainer}>
+          <ThemedText style={styles.toggleLabel}>
+            {showUserDataOnly ? 'My Data' : 'All Data'}
+          </ThemedText>
+          <Switch
+            value={showUserDataOnly}
+            onValueChange={setShowUserDataOnly}
+            trackColor={{ false: switchTrackColor, true: switchThumbColor }}
+            thumbColor={showUserDataOnly ? '#fff' : '#f4f3f4'}
+          />
+        </View>
+
+        <View style={styles.cardsContainer}>
+          <MetricCard
+            title="Total Sightings"
+            value={placeholderData.sightings}
+            icon="👁️"
+          />
+          <MetricCard
+            title="Lanternflies Killed"
+            value={placeholderData.killed}
+            icon="🎯"
+          />
+          <MetricCard
+            title="Egg Nests Destroyed"
+            value={placeholderData.nests}
+            icon="🥚"
+          />
+          <MetricCard
+            title="Total Patrols"
+            value={placeholderData.patrols}
+            icon="🚶"
+          />
+        </View>
+
+        <View style={styles.mapContainer}>
+          <WebView
+            style={styles.map}
+            source={{ html: mapHtml }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={true}
+            scalesPageToFit={true}
+          />
+        </View>
+      </ScrollView>
+    </ThemedView>
   );
 }
 
@@ -164,7 +158,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  webview: {
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 15,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+    gap: 12,
+  },
+  toggleLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  cardsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  mapContainer: {
+    height: 200,
+    marginBottom: 15,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  map: {
     flex: 1,
   },
 });
