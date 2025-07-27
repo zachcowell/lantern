@@ -1,11 +1,8 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import geojsonData from '@/assets/lanternfly-sightings.geojson';
 
 export default function MapScreen() {
-  const webViewRef = useRef<WebView>(null);
-
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -17,6 +14,17 @@ export default function MapScreen() {
       <style>
         body { margin: 0; padding: 0; }
         #map { width: 100vw; height: 100vh; }
+        #loading {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: white;
+          padding: 20px;
+          border-radius: 8px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+          z-index: 1000;
+        }
         .cluster-icon {
           background-color: #0a7ea4;
           color: white;
@@ -33,6 +41,7 @@ export default function MapScreen() {
     </head>
     <body>
       <div id="map"></div>
+      <div id="loading">Loading lanternfly data...</div>
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
       <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
       <script>
@@ -45,9 +54,12 @@ export default function MapScreen() {
           maxZoom: 19
         }).addTo(map);
         
-        // Create marker cluster group
+        // Create marker cluster group with optimized settings
         const markers = L.markerClusterGroup({
           maxClusterRadius: 60,
+          chunkedLoading: true,
+          chunkInterval: 200,
+          chunkDelay: 50,
           iconCreateFunction: function(cluster) {
             const count = cluster.getChildCount();
             let size = 'small';
@@ -69,102 +81,80 @@ export default function MapScreen() {
           }
         });
         
-        // Function to load markers
-        window.loadMarkers = function(data) {
-          try {
-            const geojsonData = JSON.parse(data);
-            let count = 0;
+        // Fetch GeoJSON data from GitHub
+        fetch('https://raw.githubusercontent.com/zachcowell/lantern/main/assets/lanternfly-sightings.geojson')
+          .then(response => response.json())
+          .then(data => {
+            console.log('Loaded ' + data.features.length + ' sightings');
             
-            if (geojsonData && geojsonData.features) {
-              geojsonData.features.forEach(feature => {
-                const [lng, lat] = feature.geometry.coordinates;
-                const marker = L.marker([lat, lng], {
-                  icon: L.divIcon({
-                    html: '<div style="background-color: #ff4444; width: 8px; height: 8px; border-radius: 50%; border: 1px solid white;"></div>',
-                    className: 'custom-marker',
-                    iconSize: [8, 8]
-                  })
-                });
-                
-                // Add popup with info
-                const date = new Date(feature.properties.date).toLocaleDateString();
-                marker.bindPopup(
-                  '<strong>Sighting #' + feature.properties.id + '</strong><br>' +
-                  'Date: ' + date
-                );
-                
-                markers.addLayer(marker);
-                count++;
+            // Hide loading indicator
+            document.getElementById('loading').style.display = 'none';
+            
+            // Add markers
+            const markerList = [];
+            data.features.forEach(feature => {
+              const [lng, lat] = feature.geometry.coordinates;
+              const marker = L.marker([lat, lng], {
+                icon: L.divIcon({
+                  html: '<div style="background-color: #ff4444; width: 8px; height: 8px; border-radius: 50%; border: 1px solid white;"></div>',
+                  className: 'custom-marker',
+                  iconSize: [8, 8]
+                })
               });
-            }
+              
+              // Add popup with info
+              const date = new Date(feature.properties.date).toLocaleDateString();
+              marker.bindPopup(
+                '<strong>Sighting #' + feature.properties.id + '</strong><br>' +
+                'Date: ' + date
+              );
+              
+              markerList.push(marker);
+            });
             
+            // Add all markers to cluster group
+            markers.addLayers(markerList);
             map.addLayer(markers);
-            console.log('Loaded ' + count + ' markers');
-          } catch (error) {
-            console.error('Error loading markers:', error);
-          }
-        };
-        
-        // Try to get user location
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            position => {
-              map.setView([position.coords.latitude, position.coords.longitude], 10);
-            },
-            error => {
-              console.log('Location error:', error);
+            
+            // Try to get user location
+            if (navigator.geolocation) {
+              navigator.geolocation.getCurrentPosition(
+                position => {
+                  map.setView([position.coords.latitude, position.coords.longitude], 10);
+                  
+                  // Add user location marker
+                  L.marker([position.coords.latitude, position.coords.longitude], {
+                    icon: L.divIcon({
+                      html: '<div style="background-color: #007AFF; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
+                      className: 'user-location',
+                      iconSize: [16, 16]
+                    })
+                  }).addTo(map).bindPopup('Your location');
+                },
+                error => {
+                  console.log('Location error:', error);
+                }
+              );
             }
-          );
-        }
-        
-        // Signal that map is ready
-        window.ReactNativeWebView.postMessage('mapReady');
+          })
+          .catch(error => {
+            console.error('Error loading data:', error);
+            document.getElementById('loading').innerHTML = 'Error loading data: ' + error.message;
+          });
       </script>
     </body>
     </html>
   `;
 
-  useEffect(() => {
-    // Wait a bit for the WebView to load, then send the data
-    const timer = setTimeout(() => {
-      if (webViewRef.current && geojsonData) {
-        // Sample the data to reduce size - take every 10th point for now
-        const sampledData = {
-          type: 'FeatureCollection',
-          features: geojsonData.features.filter((_: any, index: number) => index % 10 === 0)
-        };
-        
-        console.log(`Sending ${sampledData.features.length} of ${geojsonData.features.length} markers`);
-        
-        // Send data in chunks
-        const dataString = JSON.stringify(sampledData);
-        webViewRef.current.injectJavaScript(`
-          try {
-            window.loadMarkers(${JSON.stringify(dataString)});
-          } catch (e) {
-            console.error('Error in WebView:', e);
-          }
-          true;
-        `);
-      }
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, []);
-
   return (
     <View style={styles.container}>
       <WebView
-        ref={webViewRef}
         style={styles.webview}
         source={{ html: htmlContent }}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         startInLoadingState={true}
         scalesPageToFit={true}
-        onMessage={(event) => {
-          console.log('WebView message:', event.nativeEvent.data);
-        }}
       />
     </View>
   );
