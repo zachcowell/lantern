@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, View, Switch, Text } from 'react-native';
+import { StyleSheet, ScrollView, View, Switch, Text, useColorScheme } from 'react-native';
 import { useState, useRef, useEffect } from 'react';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -8,12 +8,38 @@ import MapView, { Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 
+const darkMapStyle = [
+  {
+    elementType: 'geometry',
+    stylers: [{ color: '#212121' }],
+  },
+  {
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#757575' }],
+  },
+  {
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#212121' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry',
+    stylers: [{ color: '#2c2c2c' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'geometry',
+    stylers: [{ color: '#000000' }],
+  },
+];
+
 export default function HomeScreen() {
   const [showUserDataOnly, setShowUserDataOnly] = useState(false);
   const switchTrackColor = useThemeColor({}, 'tabIconDefault');
   const switchThumbColor = useThemeColor({}, 'tint');
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
+  const colorScheme = useColorScheme();
   const [mapRegion, setMapRegion] = useState<Region>({
     latitude: 40.7128,
     longitude: -74.0060,
@@ -103,6 +129,7 @@ export default function HomeScreen() {
               zoomEnabled={false}
               pitchEnabled={false}
               rotateEnabled={false}
+              customMapStyle={colorScheme === 'dark' ? darkMapStyle : undefined}
             />
           </View>
         </View>

@@ -21,13 +21,14 @@ export function UploadTabButton({ onPress, accessibilityState }: UploadTabButton
       <View style={[
         styles.button,
         {
-          backgroundColor: selected 
-            ? Colors[colorScheme ?? 'light'].tint 
-            : Colors[colorScheme ?? 'light'].tint,
+          backgroundColor: Colors[colorScheme ?? 'light'].tint,
           shadowColor: Colors[colorScheme ?? 'light'].tint,
         }
       ]}>
-        <Text style={styles.plus}>+</Text>
+        <Text style={[
+          styles.plus,
+          { color: colorScheme === 'dark' ? Colors.dark.background : 'white' }
+        ]}>+</Text>
       </View>
     </TouchableOpacity>
   );
