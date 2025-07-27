@@ -7,6 +7,7 @@ import { IconSymbol } from '@/components/ui/IconSymbol';
 import TabBarBackground from '@/components/ui/TabBarBackground';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { UploadTabButton } from '@/components/UploadTabButton';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -41,17 +42,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="upload"
+        options={{
+          title: '',
+          tabBarButton: UploadTabButton,
+        }}
+      />
+      <Tabs.Screen
         name="patrols"
         options={{
           title: 'Patrols',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="figure.walk" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="upload"
-        options={{
-          title: 'Upload',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="camera.fill" color={color} />,
         }}
       />
       <Tabs.Screen
